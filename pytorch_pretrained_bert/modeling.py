@@ -1043,6 +1043,8 @@ class BertForCloth(PreTrainedBertModel):
         self.apply(self.init_bert_weights)
         self.loss = nn.CrossEntropyLoss(reduction='none')
         self.vocab_size = self.bert.embeddings.word_embeddings.weight.size(0)
+        print(self.bert.embeddings.word_embeddings.weight)
+        print(self.vocab_size)
     
     def accuracy(self, out, tgt):
         out = torch.argmax(out, -1)
@@ -1063,7 +1065,9 @@ class BertForCloth(PreTrainedBertModel):
         question_pos = question_pos.unsqueeze(-1)
         question_pos = question_pos.expand(bsz, opnum, out.size(-1))
         out = torch.gather(out, 1, question_pos)
+        print("before forward    ======    ",  out.size())
         out = self.cls(out)
+        print("after forward   =======    ", out.size())
         #convert ops to one hot
         out = out.view(bsz, opnum, 1, self.vocab_size)
         out = out.expand(bsz, opnum, 4, self.vocab_size)
@@ -1091,8 +1095,120 @@ class BertForCloth(PreTrainedBertModel):
                            
     def init_zero_weight(self, shape):
         weight = next(self.parameters())
-        return weight.new_zeros(shape)    
-#from .file_utils import      
+        return weight.new_zeros(shape)
+
+from allennlp.models import Model as ElmoModel
+from allennlp.modules.text_field_embedders import TextFieldEmbedder, BasicTextFieldEmbedder
+from allennlp.modules.seq2seq_encoders import Seq2SeqEncoder, PytorchSeq2SeqWrapper
+from allennlp.data.vocabulary import Vocabulary
+from allennlp.training.metrics import CategoricalAccuracy
+from typing import Dict
+from allennlp.nn.util import get_text_field_mask, sequence_cross_entropy_with_logits
+from allennlp.modules.token_embedders import Embedding
+
+
+class ElmoHidden(ElmoModel):
+    def __init__(self,
+                 word_embeddings: TextFieldEmbedder,
+                 encoder: Seq2SeqEncoder,
+                 vocab: Vocabulary) -> None:
+        super().__init__(vocab)
+        self.word_embeddings = word_embeddings
+        self.encoder = encoder
+        self.hidden2tag = torch.nn.Linear(in_features=encoder.get_output_dim(),
+                                          out_features=vocab.get_vocab_size('labels'))
+        self.accuracy = CategoricalAccuracy()
+
+    def forward(self,
+                sentence: Dict[str, torch.Tensor],
+                labels: torch.Tensor = None) -> Dict[str, torch.Tensor]:
+        mask = get_text_field_mask(sentence)
+        embeddings = self.word_embeddings(sentence)
+        encoder_out = self.encoder(embeddings, mask)
+        tag_logits = self.hidden2tag(encoder_out)
+        output = {"tag_logits": tag_logits}
+        if labels is not None:
+            self.accuracy(tag_logits, labels, mask)
+            output["loss"] = sequence_cross_entropy_with_logits(tag_logits, labels, mask)
+
+        return output
+
+    def get_metrics(self, reset: bool = False) -> Dict[str, float]:
+        return {"accuracy": self.accuracy.get_metric(reset)}
+
+
+class ElmoForCloth(ElmoModel):
+
+    def __init__(self, config):
+        super(ElmoForCloth, self).__init__(config)
+
+        # self.bert = BertModel(config)
+        # self.cls = BertOnlyMLMHead(config, self.bert.embeddings.word_embeddings.weight)
+        # self.apply(self.init_bert_weights)
+
+        #vocab = Vocabulary.from_instances(train_dataset + validation_dataset)
+
+        token_embedding = Embedding(num_embeddings=30522, embedding_dim=768)
+        word_embeddings = BasicTextFieldEmbedder({"tokens": token_embedding})
+        lstm = PytorchSeq2SeqWrapper(torch.nn.LSTM(768, 30522, batch_first=True))
+        model = ElmoHidden(word_embeddings, lstm, vocab)
+
+
+
+        self.loss = nn.CrossEntropyLoss(reduction='none')
+        self.vocab_size = self.bert.embeddings.word_embeddings.weight.size(0)
+
+    def accuracy(self, out, tgt):
+        out = torch.argmax(out, -1)
+        return (out == tgt).float()
+
+    def forward(self, inp, tgt):
+        '''
+        input: article -> bsz X alen,
+        option -> bsz X opnum X 4 X olen
+        output: bsz X opnum
+        '''
+        articles, articles_mask, ops, ops_mask, question_pos, mask, high_mask = inp
+
+        bsz = ops.size(0)
+        opnum = ops.size(1)
+        out, _ = self.bert(articles, attention_mask=articles_mask,
+                           output_all_encoded_layers=False)
+        question_pos = question_pos.unsqueeze(-1)
+        question_pos = question_pos.expand(bsz, opnum, out.size(-1))
+        out = torch.gather(out, 1, question_pos)
+        print("before forward    ======    ", out.size())
+        out = self.cls(out)
+        print("after forward   =======    ", out.size())
+        # convert ops to one hot
+        out = out.view(bsz, opnum, 1, self.vocab_size)
+        out = out.expand(bsz, opnum, 4, self.vocab_size)
+        out = torch.gather(out, 3, ops)
+        # mask average pooling
+        out = out * ops_mask
+        out = out.sum(-1)
+        out = out / (ops_mask.sum(-1))
+
+        out = out.view(-1, 4)
+        tgt = tgt.view(-1, )
+        loss = self.loss(out, tgt)
+        acc = self.accuracy(out, tgt)
+        loss = loss.view(bsz, opnum)
+        acc = acc.view(bsz, opnum)
+        loss = loss * mask
+        acc = acc * mask
+        acc = acc.sum(-1)
+        acc_high = (acc * high_mask).sum()
+        acc = acc.sum()
+        acc_middle = acc - acc_high
+
+        loss = loss.sum() / (mask.sum())
+        return loss, acc, acc_high, acc_middle
+
+    def init_zero_weight(self, shape):
+        weight = next(self.parameters())
+        return weight.new_zeros(shape)
+        #from .file_utils import
 if __name__ == '__main__':
     bsz = 32
     max_length = 50
