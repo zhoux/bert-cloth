@@ -13,9 +13,10 @@ from data_util import ClothSample
 import numpy as np
 import torch
 import time
-from pytorch_pretrained_bert.modeling import BertForCloth
-from pytorch_pretrained_bert.optimization import BertAdam
-from pytorch_pretrained_bert.file_utils import PYTORCH_PRETRAINED_BERT_CACHE
+from modeling import ELMoForCLOTH as CLOTH_MODEL
+from optimization import BertAdam
+from file_utils import PYTORCH_PRETRAINED_BERT_CACHE
+
 import functools
 def logging(s, log_path, print_=True, log_=True):
     if print_:
@@ -37,7 +38,7 @@ def main():
 
     ## Required parameters
     parser.add_argument("--data_dir",
-                        default='./data',
+                        default='../../data_toy',
                         type=str,
                         help="The input data dir. Should contain the .tsv files (or other data files) for the task.")
     parser.add_argument("--bert_model", default='bert-base-uncased', type=str,
@@ -171,8 +172,8 @@ def main():
             train_data.data_num / args.train_batch_size / args.gradient_accumulation_steps * args.num_train_epochs)
 
     # Prepare model
-    model = BertForCloth.from_pretrained(args.bert_model,
-              cache_dir=PYTORCH_PRETRAINED_BERT_CACHE / 'distributed_{}'.format(args.local_rank))
+    model = CLOTH_MODEL()
+    
     if args.fp16:
         model.half()
     model.to(device)

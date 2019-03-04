@@ -10,7 +10,9 @@ import argparse
 import fnmatch
 import random
 
-from pytorch_pretrained_bert.tokenization import BertTokenizer
+from tokenization import BertTokenizer
+from allennlp.modules.elmo import batch_to_ids
+
 
 def get_json_file_list(data_dir):
     files = []
@@ -43,19 +45,28 @@ class ClothSample(object):
         self.high = 0
                     
     def convert_tokens_to_ids(self, tokenizer):
-        self.article = tokenizer.convert_tokens_to_ids(self.article)
-        self.article = torch.Tensor(self.article)
+        # Use ELMo character embedding
+        self.article = batch_to_ids([self.article])[0]
+        #self.article = tokenizer.convert_tokens_to_ids(self.article)
+        #self.article = torch.Tensor(self.article)
         for i in range(len(self.ops)):
             for k in range(4):
-                self.ops[i][k] = tokenizer.convert_tokens_to_ids(self.ops[i][k])
-                self.ops[i][k] = torch.Tensor(self.ops[i][k])
+                # Use ELMo character embedding
+                self.ops[i][k] = batch_to_ids([self.ops[i][k]])[0]
+                #self.ops[i][k] = tokenizer.convert_tokens_to_ids(self.ops[i][k])
+                #self.ops[i][k] = torch.Tensor(self.ops[i][k])
+                #temp = tokenizer.convert_tokens_to_ids(self.ops[i][k])
+                #temp = torch.Tensor(temp)
+                #print('BERT tokenizer gives {}'.format(temp))
+                #print('ELMo tokenizer gives {}'.format(self.ops[i][k]))
+
         self.ph = torch.Tensor(self.ph)
         self.ans = torch.Tensor(self.ans)
                 
         
 class Preprocessor(object):
     def __init__(self, args, device='cpu'):
-        self.tokenizer = BertTokenizer.from_pretrained(args.bert_model)
+        self.tokenizer = BertTokenizer.from_pretrained(args.model_name)
         self.data_dir = args.data_dir
         file_list = get_json_file_list(args.data_dir)
         self.data = []
@@ -127,9 +138,9 @@ class Preprocessor(object):
 
 class Loader(object):
     def __init__(self, data_dir, data_file, cache_size, batch_size, device='cpu'):
-        #self.tokenizer = BertTokenizer.from_pretrained(args.bert_model)
+        
         self.data_dir = os.path.join(data_dir, data_file)
-        print('loading {}'.format(self.data_dir))
+        print('Data is located at {}'.format(self.data_dir))
         self.data = torch.load(self.data_dir)
         self.cache_size = cache_size
         self.batch_size = batch_size
@@ -138,9 +149,10 @@ class Loader(object):
     
     def _batchify(self, data_set, data_batch):
         max_article_length = 0
+        char_embedding_length = 50
         max_option_length = 0
         max_ops_num = 0
-        bsz = len(data_batch)
+        this_batch_size = len(data_batch)
         for idx in data_batch:
             data = data_set[idx]
             max_article_length = max(max_article_length, data.article.size(0))
@@ -148,14 +160,14 @@ class Loader(object):
                 for op in ops:
                     max_option_length = max(max_option_length, op.size(0))
             max_ops_num  = max(max_ops_num, len(data.ops))
-        articles = torch.zeros(bsz, max_article_length).long()
+        articles = torch.zeros(this_batch_size, max_article_length, char_embedding_length).long()
         articles_mask = torch.ones(articles.size())
-        options = torch.zeros(bsz, max_ops_num, 4, max_option_length).long()
+        options = torch.zeros(this_batch_size, max_ops_num, 4, max_option_length, char_embedding_length).long()
         options_mask = torch.ones(options.size())
-        answers = torch.zeros(bsz, max_ops_num).long()
+        answers = torch.zeros(this_batch_size, max_ops_num).long()
         mask = torch.zeros(answers.size())
         question_pos = torch.zeros(answers.size()).long()
-        high_mask = torch.zeros(bsz) #indicate the sample belong to high school set
+        high_mask = torch.zeros(this_batch_size) #indicate the sample belong to high school set
         for i, idx in enumerate(data_batch):
             data = data_set[idx]
             articles[i, :data.article.size(0)] = data.article
@@ -201,18 +213,18 @@ class Loader(object):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='bert cloth')
     args = parser.parse_args()
-    #'''
     data_collections = ['train', 'valid', 'test']
+
     for item in data_collections:    
-        args.data_dir = './CLOTH/{}'.format(item)
+        args.data_dir = '../../data/CLOTH_toy/{}'.format(item)
         args.pre = args.post = 0
-        #args.bert_model = 'bert-large-uncased'
-        args.bert_model = 'bert-base-uncased'
-        args.save_name = './data/{}-{}.pt'.format(item, args.bert_model)
+        args.model_name = 'bert-base-uncased'
+        args.save_name = '../../data_toy/{}-{}.pt'.format(item, args.model_name)
         data = Preprocessor(args)
+
     '''
     args.data_dir = './data/'
-    args.bert_model = 'bert-base-uncased'
+    args.model_name = 'bert-base-uncased'
     args.cache_size = 32
     args.batch_size = 2
     train_data = Loader(args.data_dir, 'valid.pt', args.cache_size, args.batch_size)
