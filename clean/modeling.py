@@ -245,17 +245,17 @@ class ELMoForCLOTH(nn.Module):
         # TODO Define hidden_size, hidden_act, embedding_size, vocab_size
         # The following are BERT specific parameters
         #embedding_size = 768
-        embedding_size = 2048   # ELMo output size??
+        embedding_size = 1024   # ELMo output size??
         vocab_size = 30522
-        hidden_size = 2048 # ELMo output is 2048
+        hidden_size = 1024 # ELMo output is 2048
         #hidden_size = 512 # BERT output is 512
         char_embedding_size = 50
-        ops_char_size = char_embedding_size * 3
+        ops_char_size = char_embedding_size * 1
         num_chars = 262
         hidden_act = 'gelu'
 
         # Use AllenNLP ELMo model here
-        self.elmo = Elmo(options_file, weight_file, 2,
+        self.elmo = Elmo(options_file, weight_file, 1,
                          dropout=0, requires_grad=True)
         # Use ELMo task specific layers here
         self.cls = ELMoOnlyMLMHead(hidden_size, hidden_act,
@@ -276,7 +276,7 @@ class ELMoForCLOTH(nn.Module):
         option -> bsz X opnum X 4 X olen
         output: bsz X opnum 
         '''
-        articles, articles_mask, ops, ops_mask, question_pos, mask, high_mask = inp 
+        articles, articles_mask, ops, ops_mask, ops_id, ops_id_mask, question_pos, mask, high_mask = inp 
         
         bsz = ops.size(0)
         opnum = ops.size(1)   
@@ -285,8 +285,11 @@ class ELMoForCLOTH(nn.Module):
         # We do not need articles_mask because AllenNLP ELMo handles this
         # by itself. Long sequences are 0.
         out_dict = self.elmo(articles)
-        out_elmo_embeddings = tuple(out_dict['elmo_representations'])
-        out = torch.cat(out_elmo_embeddings, -1)
+        #import pdb; pdb.set_trace()
+
+        #out_elmo_embeddings = tuple(out_dict['elmo_representations'])
+        #out = torch.cat(out_elmo_embeddings, -1)
+        out = out_dict['elmo_representations'][0]
         out_masks = out_dict['mask']        # should be same as articles mask
 
         question_pos = question_pos.unsqueeze(-1)
@@ -297,6 +300,7 @@ class ELMoForCLOTH(nn.Module):
         out = torch.gather(out, 1, question_pos)
         out = self.cls(out)
 
+        #import pdb; pdb.set_trace()
         #convert ops to one hot
         out = out.view(bsz, opnum, 1, self.num_chars)    # (4 x 20 x 1 x 261)
         out = out.expand(bsz, opnum, 4, self.num_chars)  # (4 x 20 x 4 x 261)

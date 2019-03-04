@@ -66,72 +66,13 @@ def whitespace_tokenize(text):
     return tokens
 
 
-class BertTokenizer(object):
+class ELMoTokenizer(object):
     """Runs end-to-end tokenization: punctuation splitting + wordpiece"""
-    def __init__(self, vocab_file, do_lower_case=True):
-        if not os.path.isfile(vocab_file):
-            raise ValueError(
-                "Can't find a vocabulary file at path '{}'. To load the vocabulary from a Google pretrained "
-                "model use `tokenizer = BertTokenizer.from_pretrained(PRETRAINED_MODEL_NAME)`".format(vocab_file))
-        self.vocab = load_vocab(vocab_file)
-        self.ids_to_tokens = collections.OrderedDict(
-            [(ids, tok) for tok, ids in self.vocab.items()])
+    def __init__(self, do_lower_case=True):
         self.basic_tokenizer = BasicTokenizer(do_lower_case=do_lower_case)
-        self.wordpiece_tokenizer = WordpieceTokenizer(vocab=self.vocab)
 
     def tokenize(self, text):
-        split_tokens = []
-        for token in self.basic_tokenizer.tokenize(text):
-            for sub_token in self.wordpiece_tokenizer.tokenize(token):
-                split_tokens.append(sub_token)
-        return split_tokens
-
-    def convert_tokens_to_ids(self, tokens):
-        """Converts a sequence of tokens into ids using the vocab."""
-        ids = []
-        for token in tokens:
-            ids.append(self.vocab[token])
-        return ids
-
-    def convert_ids_to_tokens(self, ids):
-        """Converts a sequence of ids in wordpiece tokens using the vocab."""
-        tokens = []
-        for i in ids:
-            tokens.append(self.ids_to_tokens[i])
-        return tokens
-
-    @classmethod
-    def from_pretrained(cls, pretrained_model_name, cache_dir=None, *inputs, **kwargs):
-        """
-        Instantiate a PreTrainedBertModel from a pre-trained model file.
-        Download and cache the pre-trained model file if needed.
-        """
-        if pretrained_model_name in PRETRAINED_VOCAB_ARCHIVE_MAP:
-            vocab_file = PRETRAINED_VOCAB_ARCHIVE_MAP[pretrained_model_name]
-        else:
-            vocab_file = pretrained_model_name
-        if os.path.isdir(vocab_file):
-            vocab_file = os.path.join(vocab_file, VOCAB_NAME)
-        # redirect to the cache, if necessary
-        try:
-            resolved_vocab_file = cached_path(vocab_file, cache_dir=cache_dir)
-        except FileNotFoundError:
-            logger.error(
-                "Model name '{}' was not found in model name list ({}). "
-                "We assumed '{}' was a path or url but couldn't find any file "
-                "associated to this path or url.".format(
-                    pretrained_model_name,
-                    ', '.join(PRETRAINED_VOCAB_ARCHIVE_MAP.keys()),
-                    vocab_file))
-            return None
-        if resolved_vocab_file == vocab_file:
-            logger.info("loading vocabulary file {}".format(vocab_file))
-        else:
-            logger.info("loading vocabulary file {} from cache at {}".format(
-                vocab_file, resolved_vocab_file))
-        # Instantiate tokenizer.
-        tokenizer = cls(resolved_vocab_file, *inputs, **kwargs)
-        return tokenizer
+        return self.basic_tokenizer.tokenize(text)
 
 
 class BasicTokenizer(object):
@@ -337,9 +278,14 @@ def _is_punctuation(char):
     # Characters such as "^", "$", and "`" are not in the Unicode
     # Punctuation class but we treat them as punctuation anyways, for
     # consistency.
+    if cp == 39:
+        return False
+
     if ((cp >= 33 and cp <= 47) or (cp >= 58 and cp <= 64) or
             (cp >= 91 and cp <= 96) or (cp >= 123 and cp <= 126)):
         return True
+    if cp == 39:
+        return False
     cat = unicodedata.category(char)
     if cat.startswith("P"):
         return True

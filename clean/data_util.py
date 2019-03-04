@@ -9,8 +9,9 @@ import nltk
 import argparse
 import fnmatch
 import random
+import copy
 
-from tokenization import BertTokenizer
+from tokenization import ELMoTokenizer
 from allennlp.modules.elmo import batch_to_ids
 
 
@@ -41,6 +42,7 @@ class ClothSample(object):
         self.article = None
         self.ph = []
         self.ops = []
+        self.op_ids = []
         self.ans = []
         self.high = 0
                     
@@ -49,14 +51,18 @@ class ClothSample(object):
         self.article = batch_to_ids([self.article])[0]
         #self.article = tokenizer.convert_tokens_to_ids(self.article)
         #self.article = torch.Tensor(self.article)
+        #self.op_ids = copy.deepcopy(self.ops)
         for i in range(len(self.ops)):
             for k in range(4):
                 # Use ELMo character embedding
+                #temp = tokenizer.convert_tokens_to_ids(self.ops[i][k])
+                #temp = torch.Tensor(temp)
+
                 self.ops[i][k] = batch_to_ids([self.ops[i][k]])[0]
                 #self.ops[i][k] = tokenizer.convert_tokens_to_ids(self.ops[i][k])
                 #self.ops[i][k] = torch.Tensor(self.ops[i][k])
-                #temp = tokenizer.convert_tokens_to_ids(self.ops[i][k])
-                #temp = torch.Tensor(temp)
+                
+                #self.op_ids[i][k] = temp
                 #print('BERT tokenizer gives {}'.format(temp))
                 #print('ELMo tokenizer gives {}'.format(self.ops[i][k]))
 
@@ -66,7 +72,7 @@ class ClothSample(object):
         
 class Preprocessor(object):
     def __init__(self, args, device='cpu'):
-        self.tokenizer = BertTokenizer.from_pretrained(args.model_name)
+        self.tokenizer = ELMoTokenizer()
         self.data_dir = args.data_dir
         file_list = get_json_file_list(args.data_dir)
         self.data = []
@@ -164,6 +170,10 @@ class Loader(object):
         articles_mask = torch.ones(articles.size())
         options = torch.zeros(this_batch_size, max_ops_num, 4, max_option_length, char_embedding_length).long()
         options_mask = torch.ones(options.size())
+
+        options_id = torch.zeros(this_batch_size, max_ops_num, 4, max_option_length).long()
+        options_id_mask = torch.ones(options_id.size())
+
         answers = torch.zeros(this_batch_size, max_ops_num).long()
         mask = torch.zeros(answers.size())
         question_pos = torch.zeros(answers.size()).long()
@@ -176,6 +186,9 @@ class Loader(object):
                 for k, op in enumerate(ops):
                     options[i,q,k,:op.size(0)] = op
                     options_mask[i,q,k, op.size(0):] = 0
+
+                    #options_id[i,q,k,:op.size(0)] = data.op_ids[q][k]
+                    #options_id_mask[i,q,k, op.size(0):] = 0
                     for l in range(op.size(0)):
                         for index, v in enumerate(options_mask[i,q,k,l]):
                             if options[i,q,k,l,index] == 261:
@@ -186,7 +199,7 @@ class Loader(object):
             for q, pos in enumerate(data.ph):
                 question_pos[i,q] = pos
             high_mask[i] = data.high
-        inp = [articles, articles_mask, options, options_mask, question_pos, mask, high_mask]
+        inp = [articles, articles_mask, options, options_mask, options_id, options_id_mask, question_pos, mask, high_mask]
         tgt = answers
         return inp, tgt
                 
@@ -219,21 +232,25 @@ if __name__ == '__main__':
     args = parser.parse_args()
     data_collections = ['train', 'valid', 'test']
 
+    
     for item in data_collections:    
         args.data_dir = '../../data/CLOTH/{}'.format(item)
         args.pre = args.post = 0
         args.model_name = 'bert-base-uncased'
         args.save_name = '../../data/{}-{}.pt'.format(item, args.model_name)
         data = Preprocessor(args)
+    
 
     '''
-    args.data_dir = './data/'
+    args.data_dir = '../../data/'
     args.model_name = 'bert-base-uncased'
     args.cache_size = 32
     args.batch_size = 2
-    train_data = Loader(args.data_dir, 'valid.pt', args.cache_size, args.batch_size)
+    train_data = Loader(args.data_dir, 'train-bert-base-uncased.pt', args.cache_size, args.batch_size)
     cnt = 0
     for inp, tgt in train_data.data_iter():
-        articles, articles_mask, options, options_mask, question_pos = inp
-
+        articles, articles_mask, options, options_mask, options_id, options_id_mask, question_pos, mask, high_mask = inp
+        #print(articles)
+        print(options)
     '''
+    
