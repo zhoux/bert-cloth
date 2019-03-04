@@ -176,6 +176,10 @@ class Loader(object):
                 for k, op in enumerate(ops):
                     options[i,q,k,:op.size(0)] = op
                     options_mask[i,q,k, op.size(0):] = 0
+                    for l in range(op.size(0)):
+                        for index, v in enumerate(options_mask[i,q,k,l]):
+                            if options[i,q,k,l,index] == 261:
+                                options_mask[i,q,k,l,index:] = 0
             for q, ans in enumerate(data.ans):
                 answers[i,q] = ans
                 mask[i,q] = 1
@@ -216,10 +220,10 @@ if __name__ == '__main__':
     data_collections = ['train', 'valid', 'test']
 
     for item in data_collections:    
-        args.data_dir = '../../data/CLOTH_toy/{}'.format(item)
+        args.data_dir = '../../data/CLOTH/{}'.format(item)
         args.pre = args.post = 0
         args.model_name = 'bert-base-uncased'
-        args.save_name = '../../data_toy/{}-{}.pt'.format(item, args.model_name)
+        args.save_name = '../../data/{}-{}.pt'.format(item, args.model_name)
         data = Preprocessor(args)
 
     '''

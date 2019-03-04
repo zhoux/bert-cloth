@@ -175,50 +175,6 @@ class BertLayerNorm(nn.Module):
         return self.gamma * x + self.beta
 
 
-class BertPredictionHeadTransform(nn.Module):
-    def __init__(self, config):
-        super(BertPredictionHeadTransform, self).__init__()
-        self.dense = nn.Linear(config.hidden_size, config.hidden_size)
-        self.transform_act_fn = ACT2FN[config.hidden_act] \
-            if isinstance(config.hidden_act, str) else config.hidden_act
-        self.LayerNorm = BertLayerNorm(config)
-
-    def forward(self, hidden_states):
-        hidden_states = self.dense(hidden_states)
-        hidden_states = self.transform_act_fn(hidden_states)
-        hidden_states = self.LayerNorm(hidden_states)
-        return hidden_states
-
-
-class BertLMPredictionHead(nn.Module):
-    def __init__(self, config, bert_model_embedding_weights):
-        super(BertLMPredictionHead, self).__init__()
-        self.transform = BertPredictionHeadTransform(config)
-
-        # The output weights are the same as the input embeddings, but there is
-        # an output-only bias for each token.
-        self.decoder = nn.Linear(bert_model_embedding_weights.size(1),
-                                 bert_model_embedding_weights.size(0),
-                                 bias=False)
-        self.decoder.weight = bert_model_embedding_weights
-        self.bias = nn.Parameter(torch.zeros(bert_model_embedding_weights.size(0)))
-
-    def forward(self, hidden_states):
-        hidden_states = self.transform(hidden_states)
-        hidden_states = self.decoder(hidden_states) + self.bias
-        return hidden_states
-
-
-class BertOnlyMLMHead(nn.Module):
-    def __init__(self, config, bert_model_embedding_weights):
-        super(BertOnlyMLMHead, self).__init__()
-        self.predictions = BertLMPredictionHead(config, bert_model_embedding_weights)
-
-    def forward(self, sequence_output):
-        prediction_scores = self.predictions(sequence_output)
-        return prediction_scores
-
-
 # ====== ELMo Predictions =======
 
 class ELMoLayerNorm(nn.Module):
@@ -261,7 +217,7 @@ class ELMoLMPredictionHead(nn.Module):
         self.decoder = nn.Linear(embedding_size,
                                  vocab_size,
                                  bias=False)
-        self.bias = nn.Parameter(torch.zeros(embedding_size))
+        self.bias = nn.Parameter(torch.zeros(vocab_size))
 
     def forward(self, hidden_states):
         hidden_states = self.transform(hidden_states)
@@ -288,19 +244,27 @@ class ELMoForCLOTH(nn.Module):
         super(ELMoForCLOTH, self).__init__()
         # TODO Define hidden_size, hidden_act, embedding_size, vocab_size
         # The following are BERT specific parameters
-        embedding_size = 768
+        #embedding_size = 768
+        embedding_size = 2048   # ELMo output size??
         vocab_size = 30522
-        hidden_size = 512
+        hidden_size = 2048 # ELMo output is 2048
+        #hidden_size = 512 # BERT output is 512
+        char_embedding_size = 50
+        ops_char_size = char_embedding_size * 3
+        num_chars = 262
         hidden_act = 'gelu'
 
         # Use AllenNLP ELMo model here
-        self.elmo = Elmo(options_file, weight_file, 2, dropout=0)
+        self.elmo = Elmo(options_file, weight_file, 2,
+                         dropout=0, requires_grad=True)
         # Use ELMo task specific layers here
         self.cls = ELMoOnlyMLMHead(hidden_size, hidden_act,
-                                   embedding_size, vocab_size)
+                                   embedding_size, num_chars)
         # Skip weight initialization
         self.loss = nn.CrossEntropyLoss(reduction='none')
         self.vocab_size = vocab_size
+        self.ops_char_size = ops_char_size
+        self.num_chars = num_chars
     
     def accuracy(self, out, tgt):
         out = torch.argmax(out, -1)
@@ -328,16 +292,19 @@ class ELMoForCLOTH(nn.Module):
         question_pos = question_pos.unsqueeze(-1)
         question_pos = question_pos.expand(bsz, opnum, out.size(-1))
 
-        import pdb; pdb.set_trace()
+        #import pdb; pdb.set_trace()
 
         out = torch.gather(out, 1, question_pos)
         out = self.cls(out)
 
         #convert ops to one hot
-        out = out.view(bsz, opnum, 1, self.vocab_size)
-        out = out.expand(bsz, opnum, 4, self.vocab_size)
+        out = out.view(bsz, opnum, 1, self.num_chars)    # (4 x 20 x 1 x 261)
+        out = out.expand(bsz, opnum, 4, self.num_chars)  # (4 x 20 x 4 x 261)
+        ops = ops.view(bsz, opnum, 4, -1)               # (4 x 20 x 4 x 150)
         out = torch.gather(out, 3, ops)
+
         #mask average pooling
+        ops_mask = ops_mask.view(bsz, opnum, 4, -1)
         out = out * ops_mask
         out = out.sum(-1)
         out = out/(ops_mask.sum(-1))

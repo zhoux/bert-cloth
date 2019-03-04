@@ -38,7 +38,7 @@ def main():
 
     ## Required parameters
     parser.add_argument("--data_dir",
-                        default='../../data_toy',
+                        default='../../data',
                         type=str,
                         help="The input data dir. Should contain the .tsv files (or other data files) for the task.")
     parser.add_argument("--bert_model", default='bert-base-uncased', type=str,
@@ -173,7 +173,7 @@ def main():
 
     # Prepare model
     model = CLOTH_MODEL()
-    
+
     if args.fp16:
         model.half()
     model.to(device)
