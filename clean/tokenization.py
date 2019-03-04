@@ -68,11 +68,35 @@ def whitespace_tokenize(text):
 
 class ELMoTokenizer(object):
     """Runs end-to-end tokenization: punctuation splitting + wordpiece"""
+
+    token2id = {}
+    token_list = ['PLACE_HOLDER1', 'PLACE_HOLDER2', 'UNK']
+    UNK_ID = 2
+
     def __init__(self, do_lower_case=True):
         self.basic_tokenizer = BasicTokenizer(do_lower_case=do_lower_case)
 
     def tokenize(self, text):
-        return self.basic_tokenizer.tokenize(text)
+        tokens = self.basic_tokenizer.tokenize(text)
+        for t in tokens:
+            if t in ELMoTokenizer.token2id:
+                #ids.append(self.token2id[t])
+                pass
+            else:
+                ELMoTokenizer.token_list.append(t)
+                ELMoTokenizer.token2id[t] = len(ELMoTokenizer.token_list) - 1
+        return tokens
+
+    def convert_tokens_to_ids(self, tokens):
+        ids = []
+        for t in tokens:
+            if t in ELMoTokenizer.token2id:
+                ids.append(ELMoTokenizer.token2id[t])
+            else:
+                ids.append(ELMoTokenizer.UNK_ID)
+        
+        return ids
+
 
 
 class BasicTokenizer(object):

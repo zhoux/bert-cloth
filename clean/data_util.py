@@ -13,7 +13,7 @@ import copy
 
 from tokenization import ELMoTokenizer
 from allennlp.modules.elmo import batch_to_ids
-
+from tqdm import tqdm
 
 def get_json_file_list(data_dir):
     files = []
@@ -26,6 +26,7 @@ def tokenize_ops(ops, tokenizer):
     ret = []
     for i in range(4):
         ret.append(tokenizer.tokenize(ops[i]))
+    
     return ret
 
 def to_device(L, device):
@@ -51,18 +52,18 @@ class ClothSample(object):
         self.article = batch_to_ids([self.article])[0]
         #self.article = tokenizer.convert_tokens_to_ids(self.article)
         #self.article = torch.Tensor(self.article)
-        #self.op_ids = copy.deepcopy(self.ops)
+        self.op_ids = copy.deepcopy(self.ops)
         for i in range(len(self.ops)):
             for k in range(4):
                 # Use ELMo character embedding
-                #temp = tokenizer.convert_tokens_to_ids(self.ops[i][k])
-                #temp = torch.Tensor(temp)
+                temp = tokenizer.convert_tokens_to_ids(self.ops[i][k])
+                temp = torch.Tensor(temp)
 
                 self.ops[i][k] = batch_to_ids([self.ops[i][k]])[0]
                 #self.ops[i][k] = tokenizer.convert_tokens_to_ids(self.ops[i][k])
                 #self.ops[i][k] = torch.Tensor(self.ops[i][k])
                 
-                #self.op_ids[i][k] = temp
+                self.op_ids[i][k] = temp
                 #print('BERT tokenizer gives {}'.format(temp))
                 #print('ELMo tokenizer gives {}'.format(self.ops[i][k]))
 
@@ -98,6 +99,10 @@ class Preprocessor(object):
             self.data_objs[i].convert_tokens_to_ids(self.tokenizer)
             #break
         torch.save(self.data_objs, args.save_name)
+
+        #print(self.tokenizer.token_list)
+        print('Vocab size after loading {}: {}'
+               .format(self.data_dir, len(self.tokenizer.token_list)))
         
     
     def _create_sample(self, data):
@@ -109,7 +114,7 @@ class Preprocessor(object):
             sample.high = data['high']
             for p in range(len(article)):
                 if (sample.article[p] == '_'):
-                    sample.article[p] = '[MASK]'
+                    sample.article[p] = ''
                     sample.ph.append(p)
                     ops = tokenize_ops(data['options'][cnt], self.tokenizer)
                     sample.ops.append(ops)
@@ -124,7 +129,7 @@ class Preprocessor(object):
             second_s = len(article) - 512
             for p in range(len(article)):
                 if (article[p] == '_'):
-                    article[p] = '[MASK]'
+                    article[p] = ''
                     ops = tokenize_ops(data['options'][cnt], self.tokenizer)
                     if (p < 512):
                         first_sample.ph.append(p)
@@ -184,15 +189,15 @@ class Loader(object):
             articles_mask[i, data.article.size(0):] = 0
             for q, ops in enumerate(data.ops):
                 for k, op in enumerate(ops):
-                    options[i,q,k,:op.size(0)] = op
-                    options_mask[i,q,k, op.size(0):] = 0
+                    #options[i,q,k,:op.size(0)] = op
+                    #options_mask[i,q,k, op.size(0):] = 0
 
-                    #options_id[i,q,k,:op.size(0)] = data.op_ids[q][k]
-                    #options_id_mask[i,q,k, op.size(0):] = 0
-                    for l in range(op.size(0)):
-                        for index, v in enumerate(options_mask[i,q,k,l]):
-                            if options[i,q,k,l,index] == 261:
-                                options_mask[i,q,k,l,index:] = 0
+                    options_id[i,q,k,:op.size(0)] = data.op_ids[q][k]
+                    options_id_mask[i,q,k, op.size(0):] = 0
+                    #for l in range(op.size(0)):
+                    #    for index, v in enumerate(options_mask[i,q,k,l]):
+                    #        if options[i,q,k,l,index] == 261:
+                    #            options_mask[i,q,k,l,index:] = 0
             for q, ans in enumerate(data.ans):
                 answers[i,q] = ans
                 mask[i,q] = 1
@@ -232,12 +237,19 @@ if __name__ == '__main__':
     args = parser.parse_args()
     data_collections = ['train', 'valid', 'test']
 
+    toy = True
+    if toy == True:
+        data_dir = '../../data/CLOTH_toy/'
+        save_name = '../../data_toy/'
+    else:
+        data_dir = '../../data/CLOTH/'
+        save_name = '../../data/'
     
     for item in data_collections:    
-        args.data_dir = '../../data/CLOTH/{}'.format(item)
+        args.data_dir = data_dir + '{}'.format(item)
         args.pre = args.post = 0
         args.model_name = 'bert-base-uncased'
-        args.save_name = '../../data/{}-{}.pt'.format(item, args.model_name)
+        args.save_name = save_name + '{}-{}.pt'.format(item, args.model_name)
         data = Preprocessor(args)
     
 

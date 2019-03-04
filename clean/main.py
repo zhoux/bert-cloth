@@ -13,6 +13,7 @@ from data_util import ClothSample
 import numpy as np
 import torch
 import time
+from tqdm import tqdm
 from modeling import ELMoForCLOTH as CLOTH_MODEL
 from optimization import BertAdam
 from file_utils import PYTORCH_PRETRAINED_BERT_CACHE
@@ -204,6 +205,7 @@ def main():
                          lr=args.learning_rate,
                          warmup=args.warmup_proportion,
                          t_total=t_total)
+    #optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
     
     global_step = 0
     if args.do_train:

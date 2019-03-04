@@ -216,12 +216,12 @@ class ELMoLMPredictionHead(nn.Module):
 
         self.decoder = nn.Linear(embedding_size,
                                  vocab_size,
-                                 bias=False)
-        self.bias = nn.Parameter(torch.zeros(vocab_size))
+                                 bias=True)
+        #self.bias = nn.Parameter(torch.zeros(vocab_size))
 
     def forward(self, hidden_states):
         hidden_states = self.transform(hidden_states)
-        hidden_states = self.decoder(hidden_states) + self.bias
+        hidden_states = self.decoder(hidden_states)
         return hidden_states
 
 
@@ -246,8 +246,8 @@ class ELMoForCLOTH(nn.Module):
         # The following are BERT specific parameters
         #embedding_size = 768
         embedding_size = 1024   # ELMo output size??
-        vocab_size = 30522
-        hidden_size = 1024 # ELMo output is 2048
+        vocab_size = 27247
+        hidden_size = 1024 # ELMo output is 1024
         #hidden_size = 512 # BERT output is 512
         char_embedding_size = 50
         ops_char_size = char_embedding_size * 1
@@ -259,7 +259,7 @@ class ELMoForCLOTH(nn.Module):
                          dropout=0, requires_grad=True)
         # Use ELMo task specific layers here
         self.cls = ELMoOnlyMLMHead(hidden_size, hidden_act,
-                                   embedding_size, num_chars)
+                                   embedding_size, vocab_size)
         # Skip weight initialization
         self.loss = nn.CrossEntropyLoss(reduction='none')
         self.vocab_size = vocab_size
@@ -277,7 +277,7 @@ class ELMoForCLOTH(nn.Module):
         output: bsz X opnum 
         '''
         articles, articles_mask, ops, ops_mask, ops_id, ops_id_mask, question_pos, mask, high_mask = inp 
-        
+        #import pdb; pdb.set_trace()
         bsz = ops.size(0)
         opnum = ops.size(1)   
 
@@ -302,16 +302,20 @@ class ELMoForCLOTH(nn.Module):
 
         #import pdb; pdb.set_trace()
         #convert ops to one hot
-        out = out.view(bsz, opnum, 1, self.num_chars)    # (4 x 20 x 1 x 261)
-        out = out.expand(bsz, opnum, 4, self.num_chars)  # (4 x 20 x 4 x 261)
+        out = out.view(bsz, opnum, 1, self.vocab_size)    # (4 x 20 x 1 x 261)
+        out = out.expand(bsz, opnum, 4, self.vocab_size)  # (4 x 20 x 4 x 261)
         ops = ops.view(bsz, opnum, 4, -1)               # (4 x 20 x 4 x 150)
-        out = torch.gather(out, 3, ops)
+        #out = torch.gather(out, 3, ops)
+        out = torch.gather(out, 3, ops_id)
 
         #mask average pooling
-        ops_mask = ops_mask.view(bsz, opnum, 4, -1)
-        out = out * ops_mask
+        #ops_mask = ops_mask.view(bsz, opnum, 4, -1)
+        ops_id_mask = ops_id_mask.view(bsz, opnum, 4, -1)
+        #out = out * ops_mask
+        out = out * ops_id_mask
         out = out.sum(-1)
-        out = out/(ops_mask.sum(-1))
+        #out = out/(ops_mask.sum(-1))
+        out = out/(ops_id_mask.sum(-1))
         
         out = out.view(-1, 4)
         tgt = tgt.view(-1,)
