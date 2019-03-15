@@ -377,7 +377,7 @@ class BertLMPredictionHead(nn.Module):
         self.decoder = nn.Linear(bert_model_embedding_weights.size(1),
                                  bert_model_embedding_weights.size(0),
                                  bias=False)
-        self.decoder.weight = bert_model_embedding_weights
+        #self.decoder.weight = bert_model_embedding_weights
         self.bias = nn.Parameter(torch.zeros(bert_model_embedding_weights.size(0)))
 
     def forward(self, hidden_states):
@@ -1065,9 +1065,7 @@ class BertForCloth(PreTrainedBertModel):
         question_pos = question_pos.unsqueeze(-1)
         question_pos = question_pos.expand(bsz, opnum, out.size(-1))
         out = torch.gather(out, 1, question_pos)
-        print("before forward    ======    ",  out.size())
         out = self.cls(out)
-        print("after forward   =======    ", out.size())
         #convert ops to one hot
         out = out.view(bsz, opnum, 1, self.vocab_size)
         out = out.expand(bsz, opnum, 4, self.vocab_size)
